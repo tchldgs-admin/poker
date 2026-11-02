@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>本格ブラウザ・テキサスホールデム</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #1b5e20; color: white; text-align: center; margin: 0; padding: 10px; overflow-x: hidden; }
+        
+        /* タイトル画面 */
+        #title-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 80vh; }
+        #title-screen h1 { font-size: 45px; color: #ffeb3b; text-shadow: 2px 2px 4px rgba(0,0,0,0.6); margin-bottom: 10px; }
+        .mode-select-box { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; margin-top: 20px; }
+        .mode-card { background: rgba(0,0,0,0.6); padding: 20px; border-radius: 15px; width: 300px; text-align: center; border: 2px solid transparent; transition: 0.2s; }
+        .mode-card:hover { border-color: #ffeb3b; transform: translateY(-5px); }
+        .mode-card h2 { color: #4fc3f7; margin-top: 0; border-bottom: 1px solid #4fc3f7; padding-bottom: 10px; }
+        .mode-card p { font-size: 14px; line-height: 1.5; color: #ddd; text-align: left; }
+        .btn-start-mode { background-color: #ff9800; color: white; font-size: 18px; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px;}
+        .btn-start-mode:hover { background-color: #f57c00; }
+        
+        /* ゲーム画面レイアウト */
+        #game-screen { display: none; }
+        .header { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.5); padding: 10px 20px; border-radius: 10px; margin-bottom: 10px; }
+        .btn-home { background: #f44336; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-home:hover { background: #d32f2f; }
+        .game-info { font-size: 16px; font-weight: bold; color: #ffeb3b; }
+        
+        .game-layout { display: flex; flex-direction: column; gap: 20px; max-width: 1150px; margin: 0 auto; }
+        @media (min-width: 850px) {
+            .game-layout { flex-direction: row; align-items: flex-start; justify-content: center; }
+            .main-board { flex: 3; }
+            .side-guide { flex: 1; min-width: 300px; position: sticky; top: 10px; }
+        }
+
+        /* サイドバー（初心者ガイド） */
+        .guide-box { background-color: #263238; border-radius: 10px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); text-align: left; }
+        .guide-box h3 { margin-top: 0; color: #4fc3f7; border-bottom: 1px solid #4fc3f7; padding-bottom: 5px; }
+        .advice-text { font-size: 15px; font-weight: bold; color: #ffeb3b; background-color: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px;}
+
+        /* 役一覧の装飾 */
+        .guide-box.scrollable { max-height: 450px; overflow-y: auto; padding-right: 10px; }
+        .guide-box.scrollable::-webkit-scrollbar { width: 6px; }
+        .guide-box.scrollable::-webkit-scrollbar-thumb { background: #4fc3f7; border-radius: 3px; }
+        .rank-list { font-size: 14px; line-height: 1.4; margin: 0; padding-left: 20px; }
+        .rank-list li { margin-bottom: 12px; border-bottom: 1px dashed rgba(255,255,255,0.2); padding-bottom: 10px; }
+        .rank-list li:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .mini-card { display: inline-block; background: white; color: #212121; border-radius: 3px; padding: 2px 4px; margin: 3px 1px 0 0; font-size: 12px; font-weight: bold; font-family: monospace; border: 1px solid #ccc; }
+        .mini-card.red { color: #d32f2f; }
+        .rank-desc { font-size: 11px; color: #cfd8dc; display: block; margin-top: 4px; }
+
+        /* カード・テーブル */
+        .card { display: inline-flex; justify-content: center; align-items: center; background-color: white; border-radius: 6px; width: 50px; height: 75px; margin: 2px; font-size: 18px; font-weight: bold; box-shadow: 2px 2px 4px rgba(0,0,0,0.4); box-sizing: border-box; }
+        .red { color: #d32f2f; } .black { color: #212121; } .hidden-card { background-color: #1976d2; color: white; font-size: 24px; }
+        
+        .table-area { margin: 10px auto; padding: 15px; border: 2px solid rgba(255,255,255,0.3); border-radius: 15px; background-color: rgba(0,0,0,0.2); position: relative; }
+        .pot-display { font-size: 20px; font-weight: bold; color: #ffeb3b; margin-bottom: 5px; }
+        
+        /* ポジションバッジのスタイル */
+        .pos-badge { display: inline-block; padding: 2px 5px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 5px; color: #fff; background: #607d8b; vertical-align: middle; }
+        .pos-btn { background: #f57c00; }
+        .pos-sb  { background: #1976d2; }
+        .pos-bb  { background: #d32f2f; }
+
+        /* ✨ プレイヤー枠とBot設定（1列横並び固定の調整） ✨ */
+        .bots-container { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; }
+        
+        #bots-area {
+            display: flex;
+            flex-wrap: nowrap; /* 必ず1列で横並び */
+            justify-content: center;
+            gap: 6px;
+            overflow-x: auto; /* 万が一画面幅が足りない場合も折り返さず横スクロール */
+            padding: 5px 0 10px 0;
+            max-width: 100%;
+        }
+        #bots-area::-webkit-scrollbar { height: 4px; }
+        #bots-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 2px; }
+
+        #bots-area .player-box {
+            flex: 0 0 auto;
+            min-width: 95px;
+            padding: 8px 4px;
+        }
+        #bots-area .card {
+            width: 42px;
+            height: 62px;
+            font-size: 15px;
+            margin: 1px;
+        }
+
+        .player-box { background-color: rgba(0,0,0,0.3); padding: 10px; border-radius: 10px; min-width: 120px; border: 3px solid transparent; transition: 0.3s; position: relative; }
+        .active-turn { border-color: #ffeb3b; background-color: rgba(255, 235, 59, 0.2); transform: scale(1.05); }
+        .folded { opacity: 0.4; filter: grayscale(80%); }
+        .busted { opacity: 0.2; filter: grayscale(100%); pointer-events: none; }
+        .busted-text { position: absolute; top: 40%; left: 0; width: 100%; color: red; font-size: 24px; font-weight: bold; transform: rotate(-20deg); text-shadow: 2px 2px 0 #fff; z-index: 5; }
+        
+        .bot-name { font-size: 13px; font-weight: bold; display: flex; justify-content: center; align-items: center; gap: 4px; }
+        .chip-display { font-size: 13px; font-weight: bold; color: #ffeb3b; }
+        .bet-display { font-size: 13px; color: #4fc3f7; }
+        .current-hand { font-size: 14px; color: #00e676; font-weight: bold; margin-top: 5px; background: rgba(0,0,0,0.5); border-radius: 5px; padding: 2px; }
+        
+        /* ボタンと操作パネル */
+        button { padding: 10px; font-size: 15px; font-weight: bold; cursor: pointer; border: none; border-radius: 5px; margin: 5px; transition: 0.1s; }
+        button:hover:not(:disabled) { transform: translateY(2px); filter: brightness(1.1); }
+        .btn-fold { background-color: #f44336; color: white; } .btn-call { background-color: #2196F3; color: white; }
+        .btn-raise { background-color: #fbc02d; color: #333; } .btn-allin { background-color: #9c27b0; color: white; }
+        .btn-next { background-color: #4CAF50; color: white; padding: 12px 24px;}
+        #bet-input { width: 80px; padding: 8px; font-size: 16px; text-align: center; border-radius: 5px; border: none; margin: 0 5px;}
+        
+        /* タイマーバー */
+        #timer-container { width: 100%; height: 10px; background: #555; border-radius: 5px; margin-top: 10px; display: none; overflow: hidden; }
+        #timer-bar { width: 100%; height: 100%; background: #4caf50; transition: width 0.1s linear; }
+        .timer-danger { background: #f44336 !important; }
+
+        /* 演出（吹き出し・カットイン） */
+        .bubble { position: absolute; top: -35px; left: 50%; transform: translateX(-50%); background: white; color: black; padding: 5px 10px; border-radius: 10px; font-weight: bold; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.4); z-index: 10; white-space: nowrap; opacity: 0; transition: opacity 0.2s; pointer-events: none;}
+        .bubble::after { content: ''; position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%); border-width: 5px 5px 0; border-style: solid; border-color: white transparent transparent transparent; }
+        .bubble.show { opacity: 1; top: -45px; transition: top 0.2s ease-out, opacity 0.2s; }
+        
+        #cutin-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; justify-content: center; align-items: center; z-index: 100; opacity: 0; }
+        .cutin-text { font-size: 80px; font-weight: bold; color: #ff0000; text-shadow: 0 0 20px #ffeb3b, 4px 4px 0 #fff; transform: scale(0); }
+        @keyframes cutinAnim { 0% { transform: scale(0); opacity: 0; } 20% { transform: scale(1.2); opacity: 1; } 80% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.5); opacity: 0; } }
+        .animate-cutin { animation: cutinAnim 1.5s ease-out forwards; }
+        
+        #message-area { font-size: 18px; font-weight: bold; color: #fff; margin: 10px 0; min-height: 25px; }
+
+        /* モーダルウィンドウ */
+        #custom-modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.8); display: none; justify-content: center; align-items: center; z-index: 1000;
+        }
+        .custom-modal {
+            background: #263238; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            text-align: center; max-width: 400px; width: 85%; border: 2px solid #ffeb3b;
+            animation: popModal 0.2s ease-out;
+        }
+        @keyframes popModal { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        #custom-modal-message { font-size: 18px; line-height: 1.6; margin-bottom: 25px; color: white; white-space: pre-wrap; font-weight: bold;}
+        .custom-modal-buttons button { min-width: 120px; font-size: 16px; padding: 12px; margin: 0 10px; }
+        .btn-modal-cancel { background-color: #757575; color: white; }
+        .btn-modal-cancel:hover { background-color: #616161; }
+        .btn-modal-ok { background-color: #f44336; color: white; }
+        .btn-modal-ok:hover { background-color: #d32f2f; }
+    </style>
+</head>
+<body>
+
+    <!-- カスタムモーダルウィンドウ -->
+    <div id="custom-modal-overlay">
+        <div class="custom-modal">
+            <div id="custom-modal-message">メッセージ</div>
+            <div class="custom-modal-buttons">
+                <button id="modal-btn-cancel" class="btn-modal-cancel">いいえ</button>
+                <button id="modal-btn-ok" class="btn-modal-ok">はい</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ▼ タイトル＆モード選択画面 ▼ -->
+    <div id="title-screen">
+        <h1>TEXAS HOLD'EM</h1>
+        <p style="font-size: 18px; margin-bottom: 30px;">プレイするシステムを選んでください</p>
+        
+        <div class="mode-select-box">
+            <div class="mode-card">
+                <h2>🎓 練習モード<br><span style="font-size: 12px; color: #fff;">(キャッシュゲーム)</span></h2>
+                <p>・時間制限なし（ゆっくり考えられます）<br>・参加費(ブラインド)は常に固定。<br>・チップが0になっても自動で復活します。<br>・じっくり役やルールを覚えたい初心者向け。</p>
+                <button class="btn-start-mode" onclick="startGame('cash')">練習モードで開始</button>
+            </div>
+            <div class="mode-card">
+                <h2>🏆 サバイバルモード<br><span style="font-size: 12px; color: #fff;">(トーナメント)</span></h2>
+                <p>・1ターンの思考時間は【15秒】！<br>・時間が経つと参加費(ブラインド)が上昇！<br>・チップが0になると脱落。<br>・最後まで生き残った1人が優勝の本格バトル！</p>
+                <button class="btn-start-mode" style="background-color: #e53935;" onclick="startGame('tournament')">サバイバルで開始</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ▼ ゲーム画面 ▼ -->
+    <div id="game-screen">
+        <div class="header">
+            <button class="btn-home" onclick="returnToTop()">🏠 トップに戻る</button>
+            <div class="game-info" id="game-info-text">モード: 未定 | ブラインド: $10/$20</div>
+        </div>
+
+        <div class="game-layout">
+            <div class="main-board">
+                <div id="message-area">準備中...</div>
+                
+                <div id="cutin-overlay"><div class="cutin-text" id="cutin-text">🔥 ALL IN !!</div></div>
+
+                <!-- CPU表示エリア（一列横並び固定） -->
+                <div id="bots-area"></div>
+
+                <div class="table-area">
+                    <div class="pot-display">ポット: $<span id="pot">0</span></div>
+                    <div id="community-cards"></div>
+                </div>
+
+                <div class="bots-container">
+                    <div class="player-box" id="player-box-0" style="min-width: 250px;">
+                        <div id="bubble-0" class="bubble"></div>
+                        <div class="bot-name">あなた 👤 <span id="pos-0" class="pos-badge" style="display:none;"></span></div>
+                        <div class="chip-display">チップ: $<span id="chips-0">1000</span></div>
+                        <div class="bet-display">出している額: $<span id="bet-0">0</span></div>
+                        <div id="cards-0" style="margin-top: 5px;"></div>
+                        <div id="current-hand-0" class="current-hand"></div>
+                    </div>
+                </div>
+
+                <div id="timer-container"><div id="timer-bar"></div></div>
+
+                <div id="action-controls" style="display: none; margin-top: 10px;">
+                    <button class="btn-fold" onclick="playerAction('fold')">Fold<br><span style="font-size: 11px;">(降りる)</span></button>
+                    <button class="btn-call" id="btn-call" onclick="playerAction('call')">Check</button>
+                    <button class="btn-raise" id="btn-raise" onclick="playerAction('raise')">Bet</button>
+                    <input type="number" id="bet-input" step="10" min="10">
+                    <button class="btn-allin" onclick="playerAction('allin')">All-in<br><span style="font-size: 11px;">(全額)</span></button>
+                </div>
+
+                <div id="system-controls" style="display: none; margin-top: 15px;">
+                    <button class="btn-next" onclick="startHand()">次のゲームへ進む</button>
+                </div>
+            </div>
+
+            <div class="side-guide">
+                <div class="guide-box">
+                    <h3>💡 おすすめアクション</h3>
+                    <div id="advice-text" class="advice-text">ゲームを開始してください。</div>
+                </div>
+                
+                <div class="guide-box scrollable">
+                    <h3>🏆 ポーカーの役（強い順）</h3>
+                    <ol class="rank-list">
+                        <li>
+                            <b>ロイヤルストレートフラッシュ</b><br>
+                            <span class="mini-card">♠10</span><span class="mini-card">♠J</span><span class="mini-card">♠Q</span><span class="mini-card">♠K</span><span class="mini-card">♠A</span>
+                            <span class="rank-desc">同じマークで10〜Aの連続。最強の役。</span>
+                        </li>
+                        <li>
+                            <b>ストレートフラッシュ</b><br>
+                            <span class="mini-card red">♥5</span><span class="mini-card red">♥6</span><span class="mini-card red">♥7</span><span class="mini-card red">♥8</span><span class="mini-card red">♥9</span>
+                            <span class="rank-desc">同じマークで5枚の数字が連続。</span>
+                        </li>
+                        <li>
+                            <b>フォーカード</b><br>
+                            <span class="mini-card">♠8</span><span class="mini-card red">♥8</span><span class="mini-card red">♦8</span><span class="mini-card">♣8</span><span class="mini-card">♠K</span>
+                            <span class="rank-desc">同じ数字が4枚揃う。</span>
+                        </li>
+                        <li>
+                            <b>フルハウス</b><br>
+                            <span class="mini-card">♠K</span><span class="mini-card red">♥K</span><span class="mini-card">♣K</span><span class="mini-card red">♦7</span><span class="mini-card">♠7</span>
+                            <span class="rank-desc">同じ数字3枚と、別の同じ数字2枚の組み合わせ。</span>
+                        </li>
+                        <li>
+                            <b>フラッシュ</b><br>
+                            <span class="mini-card">♣2</span><span class="mini-card">♣5</span><span class="mini-card">♣9</span><span class="mini-card">♣J</span><span class="mini-card">♣A</span>
+                            <span class="rank-desc">5枚すべてが同じマーク（数字はバラバラでOK）。</span>
+                        </li>
+                        <li>
+                            <b>ストレート</b><br>
+                            <span class="mini-card">♠4</span><span class="mini-card red">♥5</span><span class="mini-card">♣6</span><span class="mini-card red">♦7</span><span class="mini-card">♠8</span>
+                            <span class="rank-desc">マークに関係なく5枚の数字が連続。</span>
+                        </li>
+                        <li>
+                            <b>スリーカード</b><br>
+                            <span class="mini-card">♠Q</span><span class="mini-card red">♥Q</span><span class="mini-card">♣Q</span><span class="mini-card red">♦5</span><span class="mini-card">♠9</span>
+                            <span class="rank-desc">同じ数字が3枚揃う。</span>
+                        </li>
+                        <li>
+                            <b>ツーペア</b><br>
+                            <span class="mini-card">♠J</span><span class="mini-card red">♥J</span><span class="mini-card">♣4</span><span class="mini-card red">♦4</span><span class="mini-card">♠A</span>
+                            <span class="rank-desc">同じ数字2枚のペアが2組ある。</span>
+                        </li>
+                        <li>
+                            <b>ワンペア</b><br>
+                            <span class="mini-card">♠10</span><span class="mini-card red">♥10</span><span class="mini-card">♣2</span><span class="mini-card red">♦7</span><span class="mini-card">♠K</span>
+                            <span class="rank-desc">同じ数字2枚のペアが1組ある。</span>
+                        </li>
+                        <li>
+                            <b>ハイカード（役なし）</b><br>
+                            <span class="mini-card">♠A</span><span class="mini-card">♣J</span><span class="mini-card red">♥9</span><span class="mini-card red">♦5</span><span class="mini-card">♣3</span>
+                            <span class="rank-desc">役が1つもない状態。一番数字の大きいカードで勝負。</span>
+                        </li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CustomModal = {
+            show: function(message, type, callback) {
+                document.getElementById('custom-modal-message').innerText = message;
+                const overlay = document.getElementById('custom-modal-overlay');
+                const btnCancel = document.getElementById('modal-btn-cancel');
+                const btnOk = document.getElementById('modal-btn-ok');
+
+                overlay.style.display = 'flex';
+
+                if (type === 'alert') {
+                    btnCancel.style.display = 'none';
+                    btnOk.innerText = 'OK';
+                    btnOk.style.backgroundColor = '#4CAF50';
+                } else if (type === 'confirm') {
+                    btnCancel.style.display = 'inline-block';
+                    btnCancel.innerText = 'いいえ';
+                    btnOk.innerText = 'はい';
+                    btnOk.style.backgroundColor = '#f44336';
+                }
+
+                const cleanup = () => { overlay.style.display = 'none'; btnCancel.onclick = null; btnOk.onclick = null; };
+                btnCancel.onclick = () => { cleanup(); if (callback) callback(false); };
+                btnOk.onclick = () => { cleanup(); if (callback) callback(true); };
+            },
+            alert: function(message, callback) { this.show(message, 'alert', callback); },
+            confirm: function(message, callback) { this.show(message, 'confirm', callback); }
+        };
+
+        const suits = ['♠', '♥', '♦', '♣'];
+        const ranks = [{ label: '2', val: 2 }, { label: '3', val: 3 }, { label: '4', val: 4 }, { label: '5', val: 5 }, { label: '6', val: 6 }, { label: '7', val: 7 }, { label: '8', val: 8 }, { label: '9', val: 9 }, { label: '10', val: 10 }, { label: 'J', val: 11 }, { label: 'Q', val: 12 }, { label: 'K', val: 13 }, { label: 'A', val: 14 }];
+
+        let gameMode = 'cash'; 
+        let handCount = 0; 
+        let sbAmount = 10, bbAmount = 20;
+        let deck = [], communityCards = [], players = [];
+        let pot = 0, currentPhase = 0, currentHighestBet = 0;
+        let turnIndex = 0, dealerIndex = 0;
+        let timerInterval;
+        let timeLeft = 0;
+        const TIME_LIMIT = 15000;
+
+        const botProfiles = [
+            { name: "アグロ君", icon: "👿", type: "aggro", desc: "すぐレイズしてくる" },
+            { name: "タイトちゃん", icon: "🛡️", type: "tight", desc: "強いカードしか勝負しない" },
+            { name: "コールおじさん", icon: "😇", type: "calling", desc: "何でもついてくる" },
+            { name: "ブラフマン", icon: "🎭", type: "bluff", desc: "嘘をついて全額賭ける" },
+            { name: "標準Bot", icon: "🤖", type: "normal", desc: "普通の強さ" }
+        ];
+
+        function startGame(mode) {
+            gameMode = mode; handCount = 0; sbAmount = 10; bbAmount = 20; players = [];
+            players.push({ id: 0, name: 'あなた', icon: '👤', isBot: false, type: 'player', chips: 1000, cards: [], currentBet: 0, hasFolded: false, isAllIn: false, hasActed: false, isBust: false });
+            let profiles = [...botProfiles].sort(() => 0.5 - Math.random());
+            for (let i = 1; i <= 5; i++) {
+                let prof = profiles[i-1];
+                players.push({ id: i, name: prof.name, icon: prof.icon, type: prof.type, isBot: true, chips: 1000, cards: [], currentBet: 0, hasFolded: false, isAllIn: false, hasActed: false, isBust: false });
+            }
+            document.getElementById('title-screen').style.display = 'none';
+            document.getElementById('game-screen').style.display = 'block';
+            buildBotUI(); updateGameInfo();
+            dealerIndex = Math.floor(Math.random() * players.length);
+            startHand();
+        }
+
+        function returnToTop() {
+            CustomModal.confirm("ゲームを終了してトップに戻りますか？\n\n（現在のチップや進行状況はすべてリセットされます）", (isOk) => {
+                if (!isOk) return;
+                clearInterval(timerInterval);
+                document.getElementById('timer-container').style.display = 'none';
+                document.getElementById('action-controls').style.display = 'none';
+                document.getElementById('system-controls').style.display = 'none';
+                document.getElementById('game-screen').style.display = 'none';
+                document.getElementById('title-screen').style.display = 'flex';
+            });
+        }
+
+        function updateGameInfo() {
+            let modeName = gameMode === 'tournament' ? "🏆 サバイバル" : "🎓 練習モード";
+            document.getElementById('game-info-text').innerText = `${modeName} | ブラインド: $${sbAmount}/$${bbAmount}`;
+        }
+
+        function buildBotUI() {
+            let html = '';
+            for (let i = 1; i < players.length; i++) {
+                let p = players[i];
+                html += `<div class="player-box" id="player-box-${p.id}">
+                    <div id="bubble-${p.id}" class="bubble"></div>
+                    <div class="busted-text" id="bust-${p.id}" style="display:none;">脱落</div>
+                    <div class="bot-name">${p.name} ${p.icon} <span id="pos-${p.id}" class="pos-badge" style="display:none;"></span></div>
+                    <div class="chip-display">$<span id="chips-${p.id}">1000</span></div>
+                    <div class="bet-display">出: $<span id="bet-${p.id}">0</span></div>
+                    <div id="cards-${p.id}" style="margin-top: 5px;"></div>
+                    <div id="hand-${p.id}" class="current-hand" style="font-size:11px; background:none; padding:0;"></div>
+                </div>`;
+            }
+            document.getElementById('bots-area').innerHTML = html;
+        }
+
+        function showBubble(playerId, text) {
+            let bubble = document.getElementById(`bubble-${playerId}`);
+            bubble.innerText = text; bubble.classList.add('show');
+            setTimeout(() => bubble.classList.remove('show'), 2000);
+        }
+
+        function showCutin(text) {
+            let overlay = document.getElementById('cutin-overlay');
+            let txtEl = document.getElementById('cutin-text');
+            txtEl.innerText = text; overlay.style.opacity = '1';
+            txtEl.classList.remove('animate-cutin'); void txtEl.offsetWidth;
+            txtEl.classList.add('animate-cutin');
+            setTimeout(() => { overlay.style.opacity = '0'; }, 1500);
+        }
+
+        function startHand() {
+            handCount++;
+            document.getElementById('timer-container').style.display = 'none';
+            if (gameMode === 'tournament') {
+                if (handCount === 4) { sbAmount = 20; bbAmount = 40; showCutin("ブラインドUP!"); }
+                if (handCount === 8) { sbAmount = 50; bbAmount = 100; showCutin("ブラインドUP!"); }
+                if (handCount === 12) { sbAmount = 100; bbAmount = 200; showCutin("ブラインドUP!"); }
+                updateGameInfo();
+            }
+
+            players.forEach(p => {
+                if (p.chips <= 0) {
+                    if (gameMode === 'tournament') {
+                        p.isBust = true; document.getElementById(`player-box-${p.id}`).classList.add('busted');
+                        if(p.id !== 0) document.getElementById(`bust-${p.id}`).style.display = 'block';
+                    } else {
+                        p.chips = 1000; if(p.id === 0) showBubble(0, "チップ全回復！");
+                    }
+                }
+            });
+
+            let alivePlayers = players.filter(p => !p.isBust);
+            if (alivePlayers.length === 1) {
+                if (alivePlayers[0].id === 0) showCutin("🏆 優勝 🏆"); else showCutin("GAME OVER");
+                document.getElementById('message-area').innerText = `${alivePlayers[0].name} が最後まで生き残りました！`;
+                document.getElementById('system-controls').style.display = 'none';
+                return;
+            } else if (players[0].isBust) {
+                document.getElementById('message-area').innerText = "あなたは脱落しました... トップに戻ってやり直してください。";
+                return;
+            }
+
+            deck = createAndShuffleDeck(); communityCards = []; pot = 0; currentPhase = 0; currentHighestBet = 0;
+            do { dealerIndex = (dealerIndex + 1) % players.length; } while (players[dealerIndex].isBust);
+
+            players.forEach(p => {
+                if(p.isBust) return;
+                p.cards = [deck.pop(), deck.pop()]; p.currentBet = 0; p.hasFolded = false; p.isAllIn = false; p.hasActed = false;
+                if(p.id !== 0) document.getElementById(`hand-${p.id}`).innerText = '';
+                document.getElementById(`player-box-${p.id}`).classList.remove('folded', 'active-turn');
+            });
+
+            let getNextActive = (idx) => { let n = (idx + 1) % players.length; while(players[n].isBust) { n = (n + 1) % players.length; } return n; };
+            let sbIndex = getNextActive(dealerIndex); let bbIndex = getNextActive(sbIndex);
+            
+            players.forEach(p => p.position = "");
+            let activeCount = players.filter(p => !p.isBust).length;
+            if (activeCount === 2) {
+                players[dealerIndex].position = "BTN / BB";
+                players[sbIndex].position = "SB";
+            } else {
+                players[dealerIndex].position = "BTN";
+                players[sbIndex].position = "SB";
+                players[bbIndex].position = "BB";
+                
+                let curr = getNextActive(bbIndex);
+                let others = [];
+                while(curr !== dealerIndex) {
+                    others.push(curr);
+                    curr = getNextActive(curr);
+                }
+                if (others.length === 1) players[others[0]].position = "UTG";
+                else if (others.length === 2) { players[others[0]].position = "UTG"; players[others[1]].position = "CO"; }
+                else if (others.length === 3) { players[others[0]].position = "UTG"; players[others[1]].position = "HJ"; players[others[2]].position = "CO"; }
+            }
+
+            placeBet(players[sbIndex], sbAmount); placeBet(players[bbIndex], bbAmount); currentHighestBet = bbAmount;
+
+            document.getElementById('system-controls').style.display = 'none';
+            renderAll(); updateAdvice(); updateDisplay(`第${handCount}ゲーム開始。カードが配られました。`);
+            turnIndex = getNextActive(bbIndex); setTimeout(processTurn, 1000);
+        }
+
+        function placeBet(player, amount) {
+            let actualBet = Math.min(amount, player.chips);
+            player.chips -= actualBet; player.currentBet += actualBet; pot += actualBet;
+            if (player.chips === 0) { player.isAllIn = true; showCutin("🔥 ALL IN !!"); }
+            return actualBet;
+        }
+
+        function processTurn() {
+            renderAll(); clearInterval(timerInterval); document.getElementById('timer-container').style.display = 'none';
+            let activePlayers = players.filter(p => !p.hasFolded && !p.isAllIn && !p.isBust);
+            let notFoldedPlayers = players.filter(p => !p.hasFolded && !p.isBust);
+
+            if (notFoldedPlayers.length === 1) { endHandWinner(notFoldedPlayers[0]); return; }
+            let allActedAndMatched = players.filter(p => !p.isBust).every(p => p.hasFolded || p.isAllIn || (p.hasActed && p.currentBet === currentHighestBet));
+            if (allActedAndMatched || activePlayers.length === 0) { setTimeout(nextPhase, 1000); return; }
+
+            let p = players[turnIndex];
+            if (p.hasFolded || p.isAllIn || p.isBust) { turnIndex = (turnIndex + 1) % players.length; processTurn(); return; }
+
+            players.forEach(pl => document.getElementById(`player-box-${pl.id}`).classList.remove('active-turn'));
+            document.getElementById(`player-box-${p.id}`).classList.add('active-turn');
+
+            if (p.isBot) { setTimeout(() => executeBotLogic(p), 1500); } 
+            else { setupPlayerUI(p); }
+        }
+
+        function setupPlayerUI(p) {
+            document.getElementById('action-controls').style.display = 'block';
+            let callAmount = currentHighestBet - p.currentBet;
+            const btnCall = document.getElementById('btn-call');
+            const btnRaise = document.getElementById('btn-raise');
+            const betInput = document.getElementById('bet-input');
+
+            if (callAmount > 0) {
+                btnCall.innerHTML = `Call $${callAmount}<br><span style="font-size: 11px;">(参加)</span>`;
+                btnRaise.innerHTML = `Raise<br><span style="font-size: 11px;">(上乗せ)</span>`;
+                betInput.min = currentHighestBet * 2 || bbAmount; betInput.value = betInput.min;
+            } else {
+                btnCall.innerHTML = `Check<br><span style="font-size: 11px;">(パス)</span>`;
+                btnRaise.innerHTML = `Bet<br><span style="font-size: 11px;">(賭ける)</span>`;
+                betInput.min = bbAmount; betInput.value = bbAmount;
+            }
+            updateDisplay("あなたのアクションです。"); updateAdvice(); 
+            
+            if (gameMode === 'tournament') {
+                startPlayerTimer(callAmount > 0);
+            } else {
+                document.getElementById('timer-container').style.display = 'none';
+            }
+        }
+
+        function startPlayerTimer(mustCall) {
+            document.getElementById('timer-container').style.display = 'block';
+            let bar = document.getElementById('timer-bar');
+            bar.classList.remove('timer-danger'); timeLeft = TIME_LIMIT;
+            timerInterval = setInterval(() => {
+                timeLeft -= 100; let percent = (timeLeft / TIME_LIMIT) * 100; bar.style.width = percent + '%';
+                if (percent < 30) bar.classList.add('timer-danger');
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval); showBubble(0, "時間切れ！");
+                    playerAction(mustCall ? 'fold' : 'call');
+                }
+            }, 100);
+        }
+
+        function playerAction(type) {
+            clearInterval(timerInterval); document.getElementById('timer-container').style.display = 'none'; document.getElementById('action-controls').style.display = 'none';
+            let p = players[0]; p.hasActed = true; let callAmount = currentHighestBet - p.currentBet;
+            if (type === 'fold') { p.hasFolded = true; updateDisplay("あなたはFoldしました。"); } 
+            else if (type === 'call') { placeBet(p, callAmount); updateDisplay(callAmount > 0 ? `あなたは$${callAmount}コール。` : "あなたはCheck。"); } 
+            else if (type === 'raise') {
+                let amount = parseInt(document.getElementById('bet-input').value) || bbAmount;
+                if (amount > p.chips) amount = p.chips; placeBet(p, amount); currentHighestBet = p.currentBet;
+                players.forEach(pl => { if(pl.id !== p.id) pl.hasActed = false; }); updateDisplay(`あなたは$${amount}ベット。`);
+            }
+            else if (type === 'allin') {
+                placeBet(p, p.chips); if (p.currentBet > currentHighestBet) { currentHighestBet = p.currentBet; players.forEach(pl => { if(pl.id !== p.id) pl.hasActed = false; }); }
+            }
+            document.getElementById(`player-box-0`).classList.remove('active-turn'); turnIndex = (turnIndex + 1) % players.length; setTimeout(processTurn, 1000);
+        }
+
+        function executeBotLogic(bot) {
+            bot.hasActed = true; let callAmount = currentHighestBet - bot.currentBet;
+            let myStrength = evaluateHand(bot.cards, communityCards).score; let random = Math.random();
+            let act = 'fold', amt = 0;
+
+            if (callAmount === 0) {
+                let betProb = 0.3; if(bot.type === 'tight') betProb = 0.1; else if(bot.type === 'aggro') betProb = 0.6; else if(bot.type === 'bluff') betProb = 0.8;
+                if ((myStrength > 2000000 && random < betProb) || (bot.type === 'bluff' && random < 0.2)) { act = 'raise'; amt = bbAmount * (bot.type==='aggro'?3:2); } else { act = 'call'; }
+            } else {
+                if (myStrength < 1500000) {
+                    if(bot.type === 'calling' && callAmount < bbAmount*3) act = 'call'; else if(bot.type === 'bluff' && random < 0.15) { act = 'raise'; amt = callAmount * 3; } else act = 'fold';
+                } else if (myStrength < 3000000) {
+                    if(bot.type === 'tight') act = 'fold'; else act = 'call';
+                } else {
+                    if(bot.type === 'aggro' || bot.type === 'tight' || (bot.type === 'normal' && random < 0.5)) { act = 'raise'; amt = callAmount * 2.5; } else act = 'call';
+                }
+            }
+
+            if (act === 'fold') { bot.hasFolded = true; showBubble(bot.id, "降ります..."); updateDisplay(`${bot.name} が Fold。`); } 
+            else if (act === 'call') { placeBet(bot, callAmount); if(callAmount > 0) showBubble(bot.id, "コール！"); else showBubble(bot.id, "チェック"); updateDisplay(`${bot.name} が ${callAmount>0?'Call':'Check'}。`); } 
+            else if (act === 'raise') {
+                placeBet(bot, amt); currentHighestBet = bot.currentBet; players.forEach(pl => { if(pl.id !== bot.id) pl.hasActed = false; });
+                if(bot.isAllIn) showBubble(bot.id, "全部だ！"); else showBubble(bot.id, "レイズ！"); updateDisplay(`${bot.name} が $${amt} にレイズ！`);
+            }
+            document.getElementById(`player-box-${bot.id}`).classList.remove('active-turn'); turnIndex = (turnIndex + 1) % players.length; setTimeout(processTurn, 1000);
+        }
+
+        function nextPhase() {
+            currentPhase++; players.forEach(p => { p.hasActed = false; p.currentBet = 0; }); currentHighestBet = 0;
+            let n = (dealerIndex + 1) % players.length; while(players[n].isBust) { n = (n + 1) % players.length; } turnIndex = n;
+            if (currentPhase === 1) { communityCards.push(deck.pop(), deck.pop(), deck.pop()); updateDisplay("フロップが開かれました。"); } 
+            else if (currentPhase === 2 || currentPhase === 3) { communityCards.push(deck.pop()); updateDisplay(currentPhase === 2 ? "ターンが開かれました。" : "リバーが開かれました。"); } 
+            else if (currentPhase === 4) { showdown(); return; }
+            updateAdvice(); processTurn();
+        }
+
+        function endHandWinner(winner) {
+            renderAll(); winner.chips += pot; pot = 0; showBubble(winner.id, "私の勝ちね！");
+            updateDisplay(`${winner.name} の勝利！ (他の全員がFold)`); document.getElementById('system-controls').style.display = 'block';
+        }
+
+        function showdown() {
+            renderAll(true); let bestPlayers = [], highestScore = -1;
+            players.filter(p => !p.hasFolded && !p.isBust).forEach(p => {
+                let res = evaluateHand(p.cards, communityCards); if(p.id !== 0) document.getElementById(`hand-${p.id}`).innerText = "役: " + res.name;
+                if (res.score > highestScore) { highestScore = res.score; bestPlayers = [p]; } else if (res.score === highestScore) { bestPlayers.push(p); }
+            });
+            let splitAmount = Math.floor(pot / bestPlayers.length); let winnerNames = [];
+            bestPlayers.forEach(p => { p.chips += splitAmount; winnerNames.push(p.name); showBubble(p.id, "勝ち！");}); pot = 0;
+            updateDisplay(bestPlayers.length === 1 ? `${winnerNames[0]} の勝利！` : `${winnerNames.join(" と ")} の引き分け`);
+            document.getElementById('system-controls').style.display = 'block'; renderAll(true);
+        }
+
+        function updateAdvice() {
+            let p = players[0]; if (p.cards.length === 0 || p.hasFolded || p.isBust) return;
+            let myHand = evaluateHand(p.cards, communityCards); let adv = "";
+            if (currentPhase === 0) {
+                let v1 = p.cards[0].val, v2 = p.cards[1].val;
+                if (v1 === v2) adv = v1 >= 10 ? "強烈なペア！Raiseして攻めましょう！" : "ペアがあります。Callして様子を見ましょう。";
+                else if ((v1 >= 10 && v2 >= 10) || v1 === 14 || v2 === 14) adv = "絵札やAがあります。参加する価値あり！";
+                else adv = "弱いカードです。相手が賭けてきたらFoldが無難です。";
+                document.getElementById('current-hand-0').innerText = "手札確認中...";
+            } else {
+                document.getElementById('current-hand-0').innerText = "いまの役: " + myHand.name;
+                if (myHand.score >= 30000000000) adv = `【${myHand.name}】超強力！BetやRaiseでチップを稼ぎましょう！`;
+                else if (myHand.score >= 20000000000) adv = `【${myHand.name}】かなり強いです。Betして攻めるのがおすすめ！`;
+                else if (myHand.score >= 10000000000) adv = `【${myHand.name}】悪くありません。CheckかCallで様子を見ましょう。`;
+                else adv = `【役なし】現在勝てる見込みが薄いです。Foldが安全です。`;
+            }
+            document.getElementById('advice-text').innerText = adv;
+        }
+
+        function renderAll(isShowdown = false) {
+            document.getElementById('pot').innerText = pot;
+            players.forEach(p => {
+                if(p.isBust) {
+                    document.getElementById(`pos-${p.id}`).style.display = 'none';
+                    return;
+                }
+                document.getElementById(`chips-${p.id}`).innerText = p.chips; document.getElementById(`bet-${p.id}`).innerText = p.currentBet;
+                let box = document.getElementById(`player-box-${p.id}`); if (p.hasFolded) box.classList.add('folded');
+                let cardsHtml = '';
+                if (p.cards.length === 2) {
+                    let isHidden = (!isShowdown && p.id !== 0 && !p.hasFolded);
+                    cardsHtml = getCardHTML(p.cards[0], isHidden) + getCardHTML(p.cards[1], isHidden);
+                }
+                document.getElementById(`cards-${p.id}`).innerHTML = cardsHtml;
+
+                let posEl = document.getElementById(`pos-${p.id}`);
+                if (p.position) {
+                    posEl.style.display = 'inline-block';
+                    posEl.innerText = p.position;
+                    posEl.className = 'pos-badge';
+                    if (p.position.includes('BTN')) posEl.classList.add('pos-btn');
+                    else if (p.position === 'SB') posEl.classList.add('pos-sb');
+                    else if (p.position === 'BB') posEl.classList.add('pos-bb');
+                } else {
+                    posEl.style.display = 'none';
+                }
+            });
+            document.getElementById('community-cards').innerHTML = communityCards.map(c => getCardHTML(c, false)).join('');
+        }
+
+        function updateDisplay(msg) { if (msg) document.getElementById('message-area').innerText = msg; }
+        
+        function createAndShuffleDeck() {
+            let newDeck = []; suits.forEach(s => ranks.forEach(r => newDeck.push({ suit: s, label: r.label, val: r.val })));
+            for (let i = newDeck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [newDeck[i], newDeck[j]] = [newDeck[j], newDeck[i]]; }
+            return newDeck;
+        }
+        function getCardHTML(card, isHidden) {
+            if (isHidden) return `<div class="card hidden-card">?</div>`;
+            const colorClass = (card.suit === '♥' || card.suit === '♦') ? 'red' : 'black';
+            return `<div class="card ${colorClass}">${card.suit}<br>${card.label}</div>`;
+        }
+
+        function evaluateHand(holeCards, commCards) {
+            let cards = holeCards.concat(commCards).sort((a, b) => b.val - a.val);
+            if (cards.length < 5) return { name: "ハイカード", score: 0 };
+            let suitsCount = { '♠':[], '♥':[], '♦':[], '♣':[] }; cards.forEach(c => suitsCount[c.suit].push(c));
+            let flushCards = null; for (let s in suitsCount) if (suitsCount[s].length >= 5) flushCards = suitsCount[s];
+            function getStraightInfo(cardList) {
+                let uniqueVals = [...new Set(cardList.map(c => c.val))]; if (uniqueVals.includes(14)) uniqueVals.push(1);
+                let consecutive = 1, highest = uniqueVals[0];
+                for (let i = 0; i < uniqueVals.length - 1; i++) {
+                    if (uniqueVals[i] - 1 === uniqueVals[i+1]) { consecutive++; if (consecutive === 5) return { isStraight: true, high: highest }; } 
+                    else { consecutive = 1; highest = uniqueVals[i+1]; }
+                } return { isStraight: false, high: 0 };
+            }
+            let straightInfo = getStraightInfo(cards), isStraightFlush = false, straightFlushHigh = 0;
+            if (flushCards) { let sfInfo = getStraightInfo(flushCards); if (sfInfo.isStraight) { isStraightFlush = true; straightFlushHigh = sfInfo.high; } }
+            let valCounts = {}; cards.forEach(c => valCounts[c.val] = (valCounts[c.val] || 0) + 1);
+            let countsArr = Object.entries(valCounts).map(([v, c]) => ({val: parseInt(v), count: c})); countsArr.sort((a, b) => b.count - a.count || b.val - a.val);
+            let score = 0, name = "";
+            if (isStraightFlush) { name = straightFlushHigh === 14 ? "ロイヤルストレートフラッシュ" : "ストレートフラッシュ"; score = 80000000000 + straightFlushHigh * 100000000; } 
+            else if (countsArr[0].count === 4) { name = "フォーカード"; score = 70000000000 + countsArr[0].val * 100000000 + countsArr[1].val * 1000000; } 
+            else if (countsArr[0].count === 3 && countsArr.length > 1 && countsArr[1].count >= 2) { name = "フルハウス"; score = 60000000000 + countsArr[0].val * 100000000 + countsArr[1].val * 1000000; } 
+            else if (flushCards) { name = "フラッシュ"; score = 50000000000 + flushCards[0].val * 100000000 + flushCards[1].val * 1000000 + flushCards[2].val * 10000; } 
+            else if (straightInfo.isStraight) { name = "ストレート"; score = 40000000000 + straightInfo.high * 100000000; } 
+            else if (countsArr[0].count === 3) { name = "スリーカード"; score = 30000000000 + countsArr[0].val * 100000000 + countsArr[1].val * 1000000 + countsArr[2].val * 10000; } 
+            else if (countsArr[0].count === 2 && countsArr.length > 1 && countsArr[1].count === 2) { name = "ツーペア"; let kicker = countsArr.length > 2 ? countsArr[2].val : 0; score = 20000000000 + countsArr[0].val * 100000000 + countsArr[1].val * 1000000 + kicker * 10000; } 
+            else if (countsArr[0].count === 2) { name = "ワンペア"; score = 10000000000 + countsArr[0].val * 100000000 + countsArr[1].val * 1000000 + countsArr[2].val * 10000 + countsArr[3].val * 100; } 
+            else { name = "ハイカード"; score = countsArr[0].val * 100000000 + countsArr[1].val * 1000000 + countsArr[2].val * 10000 + countsArr[3].val * 100 + countsArr[4].val; }
+            return { name: name, score: score };
+        }
+    </script>
+</body>
+</html>
